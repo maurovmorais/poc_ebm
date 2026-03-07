@@ -1,13 +1,25 @@
+from streamlit import json
+
 from Verifai import Verifai
 import lerArquivo as extrairTexto
+from config import dicConfig
 import excel
 import os
 import shutil
+from prompt import prompt
+import time
+import json
 
 def main():
     """
     Função principal para execução do processo de extração e preenchimento de dados.
     """
+    #Chamar a função config para carregar as variáveis de ambiente
+    var_dictConfig = dicConfig()
+
+    #Atribui o prompt de descrição da tarefa a ser criada no VerifAI
+    var_strDescription = prompt()
+
     # 1. Copiar template
     if not excel.copiar_template_projeto():
         print("Falha ao preparar o arquivo de extração.")
@@ -48,11 +60,25 @@ def main():
 
         try:  
             # Chama a criação da tarefa no Verifai
-            var_intIdTarefa = Verifai.create_task(var_strCaminhoPdf)
+            if var_boolEhMinuta:
+                var_intLayout = 395
+                var_intIdTarefa = Verifai.criar_tarefa(arg_strCaminhoArquivo=var_strCaminhoPdf, arg_intLayout=var_intLayout, arg_strDescription=var_strDescription)
+            else:   
+                var_intLayout = 396
+                var_intIdTarefa = Verifai.criar_tarefa(arg_strCaminhoArquivo=var_strCaminhoPdf, arg_intLayout=var_intLayout, arg_strDescription=var_strDescription)
             
             if var_intIdTarefa:
-                # Aguarda e obtém o resultado da extração
-                var_dictResultadoExtracao = Verifai.try_get_result(var_intIdTarefa)
+                #Aguarda o status Completed
+                var_strStatus = "processing"
+                while var_strStatus == "processing":
+                    var_dictResultadoExtracao = Verifai.captura_infos_tarefa(arg_intIdTarefa=var_intIdTarefa)
+                    #Captura o status da tarefa para verificar se foi concluída com sucesso
+                    var_strStatus = var_dictResultadoExtracao['status']
+                    print(f"Status da tarefa {var_intIdTarefa}: {var_strStatus}")
+
+                # Retorna os dados extraídos em string JSON
+                time.sleep(2)  # Simula o tempo de criação da tarefa
+                var_dictResultadoExtracao = json.loads(var_dictResultadoExtracao['verification'])
                 
                 if var_dictResultadoExtracao:
                     if var_boolEhCCV:
