@@ -14,10 +14,10 @@ def main():
     """
     Função principal para execução do processo de extração e preenchimento de dados.
     """
-    #Chamar a função config para carregar as variáveis de ambiente
+    # Chamar a função config para carregar as variáveis de ambiente
     var_dictConfig = dicConfig()
 
-    #Atribui o prompt de descrição da tarefa a ser criada no VerifAI
+    # Atribui o prompt de descrição da tarefa a ser criada no VerifAI
     var_strDescription = prompt()
 
     # 1. Copiar template
@@ -40,75 +40,104 @@ def main():
         print(f"Nenhum arquivo PDF encontrado em: {var_strPastaProcessar}")
         return
 
-    # 3. Processar arquivos extraindo dados via Verifai
+    # Agrupar arquivos por nome da pessoa (Chave)
+    var_dictGrupos = {}
     for var_strCaminhoPdf in var_listCaminhosPdfs:
-        var_strNomeArquivo = os.path.basename(var_strCaminhoPdf)
-        var_strNomeArquivoUpper = var_strNomeArquivo.upper()
-        print(f"Processando arquivo: {var_strNomeArquivoUpper}")
+        var_strNomeArquivo = os.path.basename(var_strCaminhoPdf).upper()
+        
+        # Identifica se é CCV ou MINUTA e limpa o nome para obter a chave
+        var_strTipo = ""
+        var_strChave = var_strNomeArquivo.replace(".PDF", "")
+        
+        if "CCV" in var_strNomeArquivo:
+            var_strTipo = "CCV"
+            var_strChave = var_strChave.replace("CCV", "")
+        elif "MINUTA" in var_strNomeArquivo:
+            var_strTipo = "MINUTA"
+            var_strChave = var_strChave.replace("MINUTA", "")
+        elif "MIN" in var_strNomeArquivo:
+            var_strTipo = "MINUTA"
+            var_strChave = var_strChave.replace("MIN", "")
+            
+        if var_strTipo:
+            # Limpa espaços e caracteres especiais do nome para facilitar o agrupamento
+            var_strChave = var_strChave.strip(" _-")
+            
+            if var_strChave not in var_dictGrupos:
+                var_dictGrupos[var_strChave] = {"CCV": None, "MINUTA": None}
+            
+            var_dictGrupos[var_strChave][var_strTipo] = var_strCaminhoPdf
 
-        # Listas temporárias para o arquivo atual
+    # 3. Processar cada grupo (par de arquivos)
+    for var_strChave, var_dictArquivos in var_dictGrupos.items():
+        var_strPdfCCV = var_dictArquivos["CCV"]
+        var_strPdfMin = var_dictArquivos["MINUTA"]
+
+        if not var_strPdfCCV or not var_strPdfMin:
+            print(f"Aviso: Par incompleto para '{var_strChave}'.")
+            if var_strPdfCCV: print(f"  Faltando MINUTA para {var_strPdfCCV}")
+            if var_strPdfMin: print(f"  Faltando CCV para {var_strPdfMin}")
+            continue
+
+        print(f"Processando par: {var_strChave}")
+        
         var_listDadosExtraidosCCV = []
         var_listDadosExtraidosMin = []
 
-        # Identifica o tipo do arquivo (CCV ou MINUTA)
-        var_boolEhCCV = "CCV" in var_strNomeArquivoUpper
-        var_boolEhMinuta = "MINUTA" in var_strNomeArquivoUpper or "MIN" in var_strNomeArquivoUpper
-
-        if not var_boolEhCCV and not var_boolEhMinuta:
-            print(f"Aviso: O arquivo {var_strNomeArquivoUpper} não possui 'CCV' ou 'MINUTA' no nome. Pulando...")
-            continue
-
-        try:  
-            # Chama a criação da tarefa no Verifai
-            if var_boolEhMinuta:
-                var_intLayout = 395
-                var_intIdTarefa = Verifai.criar_tarefa(arg_strCaminhoArquivo=var_strCaminhoPdf, arg_intLayout=var_intLayout, arg_strDescription=var_strDescription)
-            else:   
-                var_intLayout = 396
-                var_intIdTarefa = Verifai.criar_tarefa(arg_strCaminhoArquivo=var_strCaminhoPdf, arg_intLayout=var_intLayout, arg_strDescription=var_strDescription)
+        try:
+            # Extração do CCV
+            print(f"  Enviando CCV: {os.path.basename(var_strPdfCCV)}")
+            var_intIdTarefaCCV = Verifai.criar_tarefa(arg_strCaminhoArquivo=var_strPdfCCV, arg_intLayout=396, arg_strDescription=var_strDescription)
             
-            if var_intIdTarefa:
-                #Aguarda o status Completed
-                var_strStatus = "processing"
-                while var_strStatus == "processing":
-                    var_dictResultadoExtracao = Verifai.captura_infos_tarefa(arg_intIdTarefa=var_intIdTarefa)
-                    #Captura o status da tarefa para verificar se foi concluída com sucesso
-                    var_strStatus = var_dictResultadoExtracao['status']
-                    print(f"Status da tarefa {var_intIdTarefa}: {var_strStatus}")
+            # Extração da MINUTA
+            print(f"  Enviando MINUTA: {os.path.basename(var_strPdfMin)}")
+            var_intIdTarefaMin = Verifai.criar_tarefa(arg_strCaminhoArquivo=var_strPdfMin, arg_intLayout=395, arg_strDescription=var_strDescription)
 
-                # Retorna os dados extraídos em string JSON
-                time.sleep(2)  # Simula o tempo de criação da tarefa
-                var_dictResultadoExtracao = json.loads(var_dictResultadoExtracao['verification'])
+            if var_intIdTarefaCCV and var_intIdTarefaMin:
+                # Captura resultados CCV
+                var_dictResultadoCCV = None
+                var_strStatusCCV = "processing"
+                while var_strStatusCCV == "processing":
+                    var_dictRes = Verifai.captura_infos_tarefa(arg_intIdTarefa=var_intIdTarefaCCV)
+                    var_strStatusCCV = var_dictRes['status']
+                    if var_strStatusCCV == "completed":
+                        var_dictResultadoCCV = json.loads(var_dictRes['verification'])
+                    time.sleep(2)
                 
-                if var_dictResultadoExtracao:
-                    if var_boolEhCCV:
-                        var_listDadosExtraidosCCV.append(var_dictResultadoExtracao)
-                    else:
-                        var_listDadosExtraidosMin.append(var_dictResultadoExtracao)
+                # Captura resultados MINUTA
+                var_dictResultadoMin = None
+                var_strStatusMin = "processing"
+                while var_strStatusMin == "processing":
+                    var_dictRes = Verifai.captura_infos_tarefa(arg_intIdTarefa=var_intIdTarefaMin)
+                    var_strStatusMin = var_dictRes['status']
+                    if var_strStatusMin == "completed":
+                        var_dictResultadoMin = json.loads(var_dictRes['verification'])
+                    time.sleep(2)
+
+                if var_dictResultadoCCV and var_dictResultadoMin:
+                    print(f"  Dados CCV extraídos (keys): {list(var_dictResultadoCCV.keys())}")
+                    print(f"  Dados Minuta extraídos (keys): {list(var_dictResultadoMin.keys())}")
+                    var_listDadosExtraidosCCV.append(var_dictResultadoCCV)
+                    var_listDadosExtraidosMin.append(var_dictResultadoMin)
                     
-                    # 4. Preencher o Excel com os dados do arquivo atual (anexando)
+                    # 4. Preencher o Excel com os dados do par (mesma linha)
                     excel.preencher_dados_extracao(var_listDadosExtraidosCCV, var_listDadosExtraidosMin)
+                    
+                    # Move os arquivos para processados
+                    for var_strPdf in [var_strPdfCCV, var_strPdfMin]:
+                        var_strNome = os.path.basename(var_strPdf)
+                        shutil.move(var_strPdf, os.path.join(var_strPastaProcessado, var_strNome))
+                    print(f"Par {var_strChave} processado e movido com sucesso.")
                 else:
-                    print(f"Erro: Não foi possível obter o resultado para a tarefa {var_intIdTarefa}")
+                    print(f"Erro: Não foi possível obter resultados completos para {var_strChave}")
             else:
-                print(f"Erro ao criar tarefa para o arquivo: {var_strNomeArquivoUpper}")
+                print(f"Erro ao criar tarefas para {var_strChave}")
 
         except Exception as var_objErro:
-            print(f"Erro durante o processamento do arquivo {var_strNomeArquivoUpper}: {var_objErro}")
-        
-        finally:
-            # Move o arquivo para a pasta processado após a tentativa de processamento
-            try:
-                var_strCaminhoDestino = os.path.join(var_strPastaProcessado, var_strNomeArquivo)
-                # Se o arquivo já existir no destino, removemos para evitar erro no move
-                #if os.path.exists(var_strCaminhoDestino):
-                #   os.remove(var_strCaminhoDestino)
-                #shutil.move(var_strCaminhoPdf, var_strPastaProcessado)
-                print(f"Arquivo movido para: {var_strPastaProcessado}")
-            except Exception as var_objErroMove:
-                print(f"Erro ao mover o arquivo {var_strNomeArquivo}: {var_objErroMove}")
+            print(f"Erro durante o processamento do par {var_strChave}: {var_objErro}")
 
     print("Processo concluído.")
+
 
 if __name__ == "__main__":
     main()

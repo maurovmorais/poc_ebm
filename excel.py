@@ -1,6 +1,25 @@
 import shutil
 import os
 import openpyxl
+import unicodedata
+
+def remover_acentos(arg_strTexto: str) -> str:
+    """
+    Remove acentos e caracteres especiais de uma string.
+    
+    Args:
+        arg_strTexto (str): Texto original.
+        
+    Returns:
+        str: Texto normalizado sem acentos.
+    """
+    if not arg_strTexto:
+        return ""
+    
+    # Normaliza para a forma NFD (decomposição de caracteres acentuados)
+    var_strNormalizado = unicodedata.normalize('NFD', arg_strTexto)
+    # Filtra apenas os caracteres que não são marcas de acentuação (Mn = Mark, Nonspacing)
+    return "".join(c for c in var_strNormalizado if unicodedata.category(c) != 'Mn')
 
 def copiar_template_projeto() -> bool:
     """
@@ -78,28 +97,50 @@ def preencher_dados_extracao(arg_listDadosCCV: list, arg_listDadosMin: list) -> 
                     if not var_strColuna:
                         continue
                     
-                    # Preenchimento de dados CCV e Min
-                    if var_strColuna.endswith("_CCV"):
-                        var_strChave = var_strColuna.replace("_CCV", "")
-                        var_objSheet.cell(row=var_intLinhaExcel, column=var_intColIdx).value = var_dictDadosCCV.get(var_strChave, "")
-                    elif var_strColuna.endswith("_Min"):
-                        var_strChave = var_strColuna.replace("_Min", "")
-                        var_objSheet.cell(row=var_intLinhaExcel, column=var_intColIdx).value = var_dictDadosMin.get(var_strChave, "")
+                    var_strColunaUpper = var_strColuna.upper()
                     
-                    # Lógica para as colunas de Status
-                    elif "Status" in var_strColuna or "status" in var_strColuna:
-                        # Identifica a coluna anterior para comparar
-                        var_strColMin = var_listCabecalhos[var_intColIdx - 2] if var_intColIdx > 1 else ""
-                        var_strColCCV = var_listCabecalhos[var_intColIdx - 3] if var_intColIdx > 2 else ""
+                    # Preenchimento de dados CCV e Min
+                    if var_strColunaUpper.endswith("_CCV"):
+                        var_strChave = var_strColuna[:-4] # Remove o _CCV (preservando case do meio se necessário, mas busca será flexível)
+                        # Busca insensível a caso no dicionário
+                        var_objVal = next((v for k, v in var_dictDadosCCV.items() if k.upper() == var_strChave.upper()), "")
+                        var_objSheet.cell(row=var_intLinhaExcel, column=var_intColIdx).value = var_objVal
                         
-                        if var_strColMin.endswith("_Min") and var_strColCCV.endswith("_CCV"):
-                            var_strValMin = str(var_objSheet.cell(row=var_intLinhaExcel, column=var_intColIdx - 1).value or "").strip().upper()
-                            var_strValCCV = str(var_objSheet.cell(row=var_intLinhaExcel, column=var_intColIdx - 2).value or "").strip().upper()
+                    elif var_strColunaUpper.endswith("_MIN"):
+                        var_strChave = var_strColuna[:-4] # Remove o _Min
+                        var_objVal = next((v for k, v in var_dictDadosMin.items() if k.upper() == var_strChave.upper()), "")
+                        var_objSheet.cell(row=var_intLinhaExcel, column=var_intColIdx).value = var_objVal
+                    
+                # Segunda passada para comparação de Status (após preencher a linha)
+                for var_intColIdx, var_strColuna in enumerate(var_listCabecalhos, 1):
+                    if not var_strColuna:
+                        continue
+                        
+                    if "STATUS" in var_strColuna.upper():
+                        # Lógica aprimorada: Encontrar as colunas _Min e _CCV correspondentes a este Status.
+                        # Geralmente o Status está logo após as duas colunas que ele compara.
+                        var_strValMin = ""
+                        var_strValCCV = ""
+                        
+                        # Procurar para trás as colunas _Min e _CCV mais próximas
+                        for var_intBusca in range(var_intColIdx - 1, 0, -1):
+                            var_strColBusca = str(var_listCabecalhos[var_intBusca - 1] or "").upper()
+                            if var_strColBusca.endswith("_MIN") and not var_strValMin:
+                                var_strValMin = str(var_objSheet.cell(row=var_intLinhaExcel, column=var_intBusca).value or "").strip().upper()
+                            elif var_strColBusca.endswith("_CCV") and not var_strValCCV:
+                                var_strValCCV = str(var_objSheet.cell(row=var_intLinhaExcel, column=var_intBusca).value or "").strip().upper()
                             
-                            if var_strValMin == var_strValCCV and var_strValMin != "":
-                                var_objSheet.cell(row=var_intLinhaExcel, column=var_intColIdx).value = "OK"
-                            elif var_strValMin != var_strValCCV:
-                                var_objSheet.cell(row=var_intLinhaExcel, column=var_intColIdx).value = "Divergente"
+                            if var_strValMin and var_strValCCV:
+                                break
+                        
+                        # Normalização (Remoção de acentos) para comparação
+                        var_strValMinNorm = remover_acentos(var_strValMin)
+                        var_strValCCVNorm = remover_acentos(var_strValCCV)
+                        
+                        if var_strValMinNorm == var_strValCCVNorm and var_strValMinNorm != "":
+                            var_objSheet.cell(row=var_intLinhaExcel, column=var_intColIdx).value = "OK"
+                        else:
+                            var_objSheet.cell(row=var_intLinhaExcel, column=var_intColIdx).value = "Divergente"
 
         var_objWorkbook.save(var_strArquivoExcel)
         print("Dados preenchidos com sucesso no Excel.")
