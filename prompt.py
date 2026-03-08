@@ -11,4 +11,6 @@ def prompt():
     - Para valores monetários, padronize como R$ XXX,XX.
     - Se um campo não for encontrado, retorne uma string vazia "".
     - Certifique-se de que os nomes das chaves no JSON sejam EXATAMENTE como listados acima (case-sensitive não importa para o script, mas a grafia sim).
-'''
+    - Considerar status "OK" quando existir correspondência entre os textos igual a esse exemplo: "PITANGUEIRA RESERVA URBANA" == "Pitangueira Reserva Urbana (2ª Fase)"
+    - Para valores númericos, como esse exemplo: "161122" == "161.122" desconsiderar pontos e vírgulas, e considerar como "OK" se os números forem iguais, mesmo que a formatação seja diferente.
+    '''
