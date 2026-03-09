@@ -1,5 +1,4 @@
 from streamlit import json
-
 from Verifai import Verifai
 import lerArquivo as extrairTexto
 from config import dicConfig

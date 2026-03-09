@@ -1,3 +1,4 @@
 extraçao_dados.xlsx
 __pycache__/
 *.pyc
+.venv
